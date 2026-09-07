@@ -1,0 +1,18 @@
+# Private migration records, sessions, source excerpts and configuration backups.
+/reports/
+/private/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+*.log
+*.bak
+
+# Machine-specific scripts retained locally for audit/rollback, never published.
+/scripts/codex-mcp-discovery.mjs
+/scripts/mcp-check.ts
+/scripts/prepare-demo.ts
+/scripts/restart-native-migration.py
+/scripts/sample-native-migration.py
+/scripts/rollback-native-migration.ps1

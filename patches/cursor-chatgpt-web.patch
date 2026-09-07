@@ -1,0 +1,296 @@
+diff --git a/src/adapters/chatgpt-web/launcher-helper-client.ts b/src/adapters/chatgpt-web/launcher-helper-client.ts
+index 0a1515e..c70a0ad 100644
+--- a/src/adapters/chatgpt-web/launcher-helper-client.ts
++++ b/src/adapters/chatgpt-web/launcher-helper-client.ts
+@@ -10,6 +10,7 @@ import {
+ } from "./rolling-checkpoint";
+ 
+ interface PendingTurn {
++  prepared?: CompiledChatGptWebPrompt;
+   turn: BrowserTurn;
+   resolve: (value: string) => void;
+   reject: (error: Error) => void;
+@@ -19,7 +20,7 @@ interface PendingTurn {
+ 
+ type HelperMessage =
+   | { type: "ready" }
+-  | { type: "event"; id: string; event: "heartbeat" | "reasoning" | "commentary" | "text"; text?: string; continuation?: boolean }
++  | { type: "event"; id: string; event: "heartbeat" | "reasoning" | "commentary" | "text" | "prepared_selected" | "send_activated" | "submitted"; text?: string; continuation?: boolean }
+   | { type: "event"; id: string; event: "luna_checkpoint"; checkpoint: ChatGptLunaCheckpoint; answerHash: string }
+   | { type: "result"; id: string; text: string }
+   | {
+@@ -59,7 +60,10 @@ function parseHelperMessage(line: string): HelperMessage {
+     }
+     const text = message.text;
+     const continuation = message.continuation;
+-    if (!["heartbeat", "reasoning", "commentary", "text"].includes(String(event))) {
++    if (event === "prepared_selected" && message.reused !== false) {
++      throw new Error("Read-only worker requires a fresh launcher conversation");
++    }
++    if (!["heartbeat", "reasoning", "commentary", "text", "prepared_selected", "send_activated", "submitted"].includes(String(event))) {
+       throw new Error("Launcher browser helper emitted an unknown event");
+     }
+     if (text !== undefined && typeof text !== "string") {
+@@ -125,6 +129,10 @@ function parseHelperMessage(line: string): HelperMessage {
+ }
+ 
+ export class LauncherBrowserHelperClient {
++  // Launcher tabs share account effort preferences. Serialize UI preparation only;
++  // release on submission so response generation remains concurrent.
++  private preparationTail: Promise<void> = Promise.resolve();
++  private readonly preparationReleases = new Map<string, () => void>();
+   private child?: ChildProcessWithoutNullStreams;
+   private ready?: Promise<void>;
+   private readyResolve?: () => void;
+@@ -134,6 +142,17 @@ export class LauncherBrowserHelperClient {
+   constructor(private readonly config: ResolvedBrowserConfig) {}
+ 
+   async run(turn: BrowserTurn): Promise<string> {
++    let unlock!: () => void;
++    const gate = new Promise<void>(resolve => { unlock = resolve; });
++    const previous = this.preparationTail;
++    this.preparationTail = previous.then(() => gate);
++    await previous;
++    this.preparationReleases.set(turn.traceId, unlock);
++    try { return await this.runPrepared(turn); }
++    finally { unlock(); this.preparationReleases.delete(turn.traceId); }
++  }
++
++  private async runPrepared(turn: BrowserTurn): Promise<string> {
+     if (turn.abortSignal?.aborted) throw new DOMException("ChatGPT web turn aborted", "AbortError");
+     const prepared = await turn.prepare();
+     try {
+@@ -144,7 +163,7 @@ export class LauncherBrowserHelperClient {
+           rejectResult(new Error(`Duplicate launcher browser turn: ${turn.traceId}`));
+           return;
+         }
+-        const pending: PendingTurn = { turn, resolve: resolveResult, reject: rejectResult };
++        const pending: PendingTurn = { turn, prepared, resolve: resolveResult, reject: rejectResult };
+         this.pending.set(turn.traceId, pending);
+         if (turn.abortSignal) {
+           const abortListener = () => {
+@@ -301,6 +320,17 @@ export class LauncherBrowserHelperClient {
+     const pending = this.pending.get(message.id);
+     if (!pending) return;
+     if (message.type === "event") {
++      if (message.event === "submitted") {
++        this.preparationReleases.get(message.id)?.();
++        return;
++      }
++      if (message.event === "prepared_selected" || message.event === "send_activated") {
++        void this.send(message.event === "prepared_selected"
++          ? { type: "prepared_selected_ack", id: message.id, prepared: pending.prepared }
++          : { type: "send_activation_ack", id: message.id }
++        ).catch(error => this.finishWithError(message.id, error instanceof Error ? error : new Error(String(error))));
++        return;
++      }
+       if (message.event === "heartbeat") pending.turn.onHeartbeat?.();
+       else if (message.event === "luna_checkpoint") {
+         if (!pending.turn.captureLunaCheckpoint || !pending.turn.onLunaCheckpoint) {
+diff --git a/src/cursor/mcp.ts b/src/cursor/mcp.ts
+index a4e0de3..886e464 100644
+--- a/src/cursor/mcp.ts
++++ b/src/cursor/mcp.ts
+@@ -7,7 +7,6 @@ import {
+ import * as z from "zod/v4";
+ import { VERSION } from "../version";
+ import { isCursorChatGptWebError } from "./errors";
+-import { CURSOR_GPT_WEB_MCP_INSTRUCTIONS } from "./policy";
+ import { getCursorSpecialistRuntime } from "./runtime";
+ import { routeStdioMcpLogsToStderr } from "./stdio-logs";
+ import type { SpecialistImage, SpecialistToolResult, SpecialistToolSpec, SpecialistTurnResult } from "./task-session";
+@@ -97,7 +96,7 @@ export async function runCursorChatGptWebMcpServer(): Promise<void> {
+   routeStdioMcpLogsToStderr();
+   const server = new McpServer(
+     { name: "cursor-chatgpt-web", version: VERSION },
+-    { instructions: CURSOR_GPT_WEB_MCP_INSTRUCTIONS },
++    { instructions: "Codex Parent owns requirements, architecture, decisions, repository writes, tests and final verification. ChatGPT Web is a subordinate READ / ANALYZE / REPORT worker. Delegate bounded code, dependency, documentation, log and test investigations using focused context. Prefer batch for 2–5 independent tasks; never exceed five active workers. Use explicit mode instant or medium for routine analysis. Never execute worker tool calls automatically. Recheck important claims locally. Do not change Parent base URL or start another browser daemon." },
+   );
+   attachEmptyMcpCatalogs(server);
+   const runtime = () => getCursorSpecialistRuntime();
+@@ -105,14 +104,14 @@ export async function runCursorChatGptWebMcpServer(): Promise<void> {
+   server.registerTool(
+     "chatgpt_web_turn",
+     {
+-      title: "Ask GPT Web High",
++      title: "Ask a read-only Web worker",
+       description: [
+         "Delegate a focused reasoning job to ChatGPT Web (default GPT-5.6 Sol High) in a Temporary Chat.",
+-        "Use for ambiguous architecture, hard root cause, independent review, or a second opinion.",
+-        "Do not use for trivial edits, formatting, simple search, or one-line fixes.",
++        "Use for bounded repository, dependency, documentation, log and test analysis; Codex retains final authority.",
++        "Use explicit instant or medium mode for routine reading; send only focused context.",
+         "Cursor must keep Read, Search, Shell, ApplyPatch, git, and tests. Omit threadId for a fresh Temporary Chat; pass threadId only to resume an explicit specialist thread.",
+         "Set metadata.role for a named lease; threadId defaults to role:<role>. A second live job with the same role fails with lease_blocked.",
+-        "If the result has awaitingTools=true, run the toolCalls locally and call again with the same jobId and toolResults. That continues the same Temporary Chat.",
++        "No local tools are permitted. If awaitingTools is returned, cancel that job and let Codex investigate locally.",
+         "A sixth concurrent turn queues unless queue=false, which keeps chatgpt_web_tab_limit.",
+       ].join(" "),
+       inputSchema: {
+@@ -122,8 +121,8 @@ export async function runCursorChatGptWebMcpServer(): Promise<void> {
+         jobId: z.string().min(1).max(200).optional(),
+         images: z.array(imageSchema).max(10).optional(),
+         metadata: metadataSchema.optional(),
+-        tools: z.array(toolSpecSchema).max(32).optional(),
+-        toolResults: z.array(toolResultSchema).max(32).optional(),
++        tools: z.array(toolSpecSchema).max(0).optional(),
++        toolResults: z.array(toolResultSchema).max(0).optional(),
+         queue: z.boolean().optional(),
+       },
+       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+diff --git a/src/launcher-browser-host.ts b/src/launcher-browser-host.ts
+index 1c56afc..14e217e 100644
+--- a/src/launcher-browser-host.ts
++++ b/src/launcher-browser-host.ts
+@@ -5,10 +5,27 @@ import { expandUserPath } from "./config";
+ import { processRunning } from "./process";
+ 
+ export const LAUNCHER_BROWSER_HOST_KIND = "codex-web-gpt-launcher";
++export const LAUNCHER_BROWSER_IDLE_URL = "data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Chead%3E%3Cmeta%20charset%3D%22utf-8%22%3E%3Ctitle%3ECodex%20Web%20GPT%3C%2Ftitle%3E%3C%2Fhead%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E#codex-web-gpt-browser-host";
++export type LauncherBrowserHostProfile = "production" | "development";
++
++export class LauncherBrowserTurnCancelledError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "LauncherBrowserTurnCancelledError";
++  }
++}
++
++export class LauncherRetainedConversationUnavailableError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "LauncherRetainedConversationUnavailableError";
++  }
++}
+ 
+ export interface LauncherBrowserHostDescriptor {
+-  version: 1;
++  version: 2;
+   kind: typeof LAUNCHER_BROWSER_HOST_KIND;
++  profile: LauncherBrowserHostProfile;
+   pid: number;
+   endpoint: string;
+   control: {
+@@ -51,9 +68,12 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
+     throw new Error("Launcher browser descriptor is not an object");
+   }
+   const descriptor = value as Partial<LauncherBrowserHostDescriptor>;
+-  if (descriptor.version !== 1 || descriptor.kind !== LAUNCHER_BROWSER_HOST_KIND) {
++  if (descriptor.version !== 2 || descriptor.kind !== LAUNCHER_BROWSER_HOST_KIND) {
+     throw new Error("Launcher browser descriptor has an unsupported identity or version");
+   }
++  if (descriptor.profile !== "production" && descriptor.profile !== "development") {
++    throw new Error("Launcher browser descriptor has an invalid profile");
++  }
+   if (!Number.isInteger(descriptor.pid) || descriptor.pid! < 1) {
+     throw new Error("Launcher browser descriptor has an invalid pid");
+   }
+@@ -76,10 +96,13 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
+   if (!helperScript || !existsSync(helperScript)) {
+     throw new Error("Launcher browser descriptor helper script does not exist");
+   }
+-  if (descriptor.partition !== "persist:codex-web-gpt-chatgpt") {
++  const expectedPartition = descriptor.profile === "development"
++    ? "persist:codex-web-gpt-dev-chatgpt"
++    : "persist:codex-web-gpt-chatgpt";
++  if (descriptor.partition !== expectedPartition) {
+     throw new Error("Launcher browser descriptor identifies an unexpected browser partition");
+   }
+-  if (descriptor.idleUrl !== "about:blank#codex-web-gpt-browser-host") {
++  if (descriptor.idleUrl !== LAUNCHER_BROWSER_IDLE_URL) {
+     throw new Error("Launcher browser descriptor identifies an unexpected idle surface");
+   }
+   if (typeof descriptor.surfaceId !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(descriptor.surfaceId)) {
+@@ -89,8 +112,9 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
+     throw new Error("Launcher browser descriptor has an invalid creation time");
+   }
+   return {
+-    version: 1,
++    version: 2,
+     kind: LAUNCHER_BROWSER_HOST_KIND,
++    profile: descriptor.profile,
+     pid: descriptor.pid!,
+     endpoint,
+     control: { endpoint: controlEndpoint, token: descriptor.control.token },
+diff --git a/tests/launcher-browser-host.test.ts b/tests/launcher-browser-host.test.ts
+index 6d55e6b..740ec5c 100644
+--- a/tests/launcher-browser-host.test.ts
++++ b/tests/launcher-browser-host.test.ts
+@@ -28,7 +28,8 @@ function descriptorFile(controlEndpoint = "http://127.0.0.1:39111"): string {
+   roots.push(root);
+   const path = join(root, "launcher-browser.json");
+   writeFileSync(path, `${JSON.stringify({
+-    version: 1,
++    version: 2,
++    profile: "production",
+     kind: LAUNCHER_BROWSER_HOST_KIND,
+     pid: process.pid,
+     endpoint: "http://127.0.0.1:39110",
+@@ -41,7 +42,7 @@ function descriptorFile(controlEndpoint = "http://127.0.0.1:39111"): string {
+       script: import.meta.path,
+     },
+     partition: "persist:codex-web-gpt-chatgpt",
+-    idleUrl: "about:blank#codex-web-gpt-browser-host",
++    idleUrl: "data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Chead%3E%3Cmeta%20charset%3D%22utf-8%22%3E%3Ctitle%3ECodex%20Web%20GPT%3C%2Ftitle%3E%3C%2Fhead%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E#codex-web-gpt-browser-host",
+     surfaceId: "launcher_surface_id_0123456789AB",
+     createdAt: new Date().toISOString(),
+   })}\n`, { mode: 0o600 });
+@@ -192,7 +193,7 @@ test("launcher page selection uses the owned surface marker instead of URL order
+     evaluate: async () => "another_surface_id_0123456789ABC",
+   } as unknown as Page;
+   const ownedPage = {
+-    url: () => "about:blank#codex-web-gpt-browser-host",
++    url: () => "data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Chead%3E%3Cmeta%20charset%3D%22utf-8%22%3E%3Ctitle%3ECodex%20Web%20GPT%3C%2Ftitle%3E%3C%2Fhead%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E#codex-web-gpt-browser-host",
+     evaluate: async () => descriptor.surfaceId,
+   } as unknown as Page;
+   const context = {
+diff --git a/tests/launcher-helper-client.test.ts b/tests/launcher-helper-client.test.ts
+index 4204221..1098fe3 100644
+--- a/tests/launcher-helper-client.test.ts
++++ b/tests/launcher-helper-client.test.ts
+@@ -19,11 +19,24 @@ test("Bun daemon streams a prepared browser turn through the persistent Node hel
+   writeFileSync(helper, `
+     const readline = require("node:readline").createInterface({ input: process.stdin });
+     const send = value => process.stdout.write(JSON.stringify(value) + "\\n");
++    let runMessage;
+     send({ type: "ready" });
+     readline.on("line", line => {
+-      const message = JSON.parse(line);
++      let message = JSON.parse(line);
+       if (message.type === "shutdown") process.exit(0);
+-      if (message.type !== "run") return;
++      if (message.type === "run") {
++        runMessage = message;
++        send({type:"event",id:message.id,event:"prepared_selected",reused:false});
++        return;
++      }
++      if (message.type === "prepared_selected_ack") {
++        if (message.prepared.text !== "inspect") process.exit(2);
++        send({type:"event",id:message.id,event:"send_activated"});
++        return;
++      }
++      if (message.type !== "send_activation_ack") return;
++      message = runMessage;
++      send({type:"event",id:message.id,event:"submitted"});
+       send({ type: "event", id: message.id, event: "reasoning", text: "Reading project" });
+       send({ type: "event", id: message.id, event: "reasoning", text: " files", continuation: true });
+       send({ type: "event", id: message.id, event: "text", text: "done" });
+@@ -46,7 +59,8 @@ test("Bun daemon streams a prepared browser turn through the persistent Node hel
+   `, { mode: 0o700 });
+   const descriptorPath = join(root, "launcher.json");
+   writeFileSync(descriptorPath, `${JSON.stringify({
+-    version: 1,
++    version: 2,
++    profile: "production",
+     kind: LAUNCHER_BROWSER_HOST_KIND,
+     pid: process.pid,
+     endpoint: "http://127.0.0.1:39001",
+@@ -56,7 +70,7 @@ test("Bun daemon streams a prepared browser turn through the persistent Node hel
+     },
+     helper: { executable: process.execPath, script: helper },
+     partition: "persist:codex-web-gpt-chatgpt",
+-    idleUrl: "about:blank#codex-web-gpt-browser-host",
++    idleUrl: "data:text/html;charset=utf-8,%3C!doctype%20html%3E%3Chtml%3E%3Chead%3E%3Cmeta%20charset%3D%22utf-8%22%3E%3Ctitle%3ECodex%20Web%20GPT%3C%2Ftitle%3E%3C%2Fhead%3E%3Cbody%3E%3C%2Fbody%3E%3C%2Fhtml%3E#codex-web-gpt-browser-host",
+     surfaceId: "launcher_surface_id_0123456789AB",
+     createdAt: new Date().toISOString(),
+   })}\n`, { mode: 0o600 });

@@ -1,0 +1,29 @@
+name: Checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+      - name: Test installer isolation and config preservation
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Prepare pinned backend without user config writes
+        run: python -c "import sys; sys.path.insert(0, 'scripts'); import setup; setup.prepare_backend(setup.find_bun())"
+      - name: Test MCP, capacity, cancellation and launcher protocol
+        run: bun test ./tests/preparation-gate.test.ts ./vendor/cursor-chatgpt-web/tests/launcher-helper-client.test.ts ./vendor/cursor-chatgpt-web/tests/launcher-browser-host.test.ts ./vendor/cursor-chatgpt-web/tests/cursor-specialist.test.ts ./vendor/cursor-chatgpt-web/tests/cursor-v2.test.ts ./vendor/cursor-chatgpt-web/tests/cursor-mcp-protocol.test.ts

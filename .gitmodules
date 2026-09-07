@@ -1,0 +1,4 @@
+[submodule "vendor/cursor-chatgpt-web"]
+	path = vendor/cursor-chatgpt-web
+	url = https://github.com/Rakeem-C/cursor-chatgpt-web.git
+	ignore = dirty
