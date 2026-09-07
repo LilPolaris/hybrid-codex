@@ -44,7 +44,8 @@ def backup(path: Path, home: Path) -> Path | None:
 def install_skill(home: Path) -> Path:
     source = ROOT / '.agents' / 'skills' / 'web-workers'
     target = home / 'skills' / 'web-workers'
-    files = [source / 'SKILL.md', source / 'agents' / 'openai.yaml']
+    files = [source / 'SKILL.md', source / 'agents' / 'openai.yaml',
+             source / 'scripts' / 'worker_meter.py', source / 'references' / 'meter.md']
     if all((target / p.relative_to(source)).is_file() and
            (target / p.relative_to(source)).read_bytes() == p.read_bytes() for p in files):
         return target

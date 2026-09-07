@@ -33,6 +33,8 @@ class SetupTests(unittest.TestCase):
             home = Path(temporary)
             target = setup.install_skill(home)
             expected = (target/'SKILL.md').read_bytes()
+            self.assertTrue((target/'scripts/worker_meter.py').is_file())
+            self.assertTrue((target/'references/meter.md').is_file())
             setup.install_skill(home)
             self.assertFalse((home/'backups').exists())
             (target/'SKILL.md').write_text('previous user skill', encoding='utf-8')

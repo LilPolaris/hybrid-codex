@@ -55,6 +55,11 @@ response → state; and auth test coverage/missing edge cases.
 
 ## Calls
 
+For each delegation, follow [the routing ledger and inline meter](references/meter.md).
+Record the baseline before calling the worker, honor session cooldowns, and show the
+resulting numeric card in chat after each attempt. Unknown savings must stay unknown.
+Use the helper installed with this skill, including outside this repository.
+
 Call chatgpt_web_status first. Interpret highest as the highest supported reasoning
 mode, not maximum parallelism or a claim about remaining account quota. Select the
 first mode marked available in capabilities.modes in this order:

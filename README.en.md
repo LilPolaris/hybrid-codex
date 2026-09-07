@@ -120,6 +120,29 @@ Prefer batch for 2–5 independent investigations. Simple grep and file lookups 
 local. Important claims follow: worker claim → Parent inspects code or runtime
 results → verification → decision.
 
+### Per-delegation numbers and failure cooldowns
+
+Before dispatch, the skill records an estimated baseline for Parent work. After each
+attempt it shows an inline message, for example:
+
+> Delegation log-review | web/high → luna/max | 24.6s | estimated net Parent savings −200…+1,000 tokens
+
+This is a format example. The range deducts preparation, returned context, verification
+and failed-attempt overhead. Negative values mean potentially greater token cost.
+Unknown values remain unknown; worker usage is never counted directly as savings.
+These are not actual billing, quota or account-wide savings. Native Luna also consumes
+native account usage.
+
+Within a task, authentication failures cool down for 30 minutes, exhausted quota for
+60 minutes, unavailable tools for 10 minutes and transient failures for 60 seconds.
+Other subtasks skip that provider during cooldown. SQLite state survives resumption;
+separate tasks remain independent. Running or unresolved jobs block duplicate dispatch.
+
+No local report needs to be opened. Setup installs the ledger helper with the skill.
+Its default database is `$CODEX_HOME/worker-metrics/ledger.sqlite`; only identifiers,
+numbers and brief status metadata are recorded. See the
+[accounting workflow](.agents/skills/web-workers/references/meter.md).
+
 ## Verification
 
 ```sh
@@ -146,8 +169,11 @@ three-worker run passed. In one three-task run, all generation windows overlappe
 for 11.923 seconds. This is a recorded observation, not a performance guarantee.
 Private configuration, login data, session IDs and full logs are not published.
 
-The automatic Web → Luna max → Parent fallback policy has passed skill validation
-and installation tests; its complete live fallback chain has not yet been tested.
+Independent routing and cooldown tests cover Web success, Luna fallback, Parent fallback,
+cooldown expiry, duplicate records, running-job reservations and negative savings.
+Report live tool acceptance and injected failures separately: fault injection does not
+mean the account experienced a real outage.
+See the [acceptance record](docs/worker-acceptance.md) for live calls, cancellation and fallback scope.
 
 ## Source and maintenance
 
