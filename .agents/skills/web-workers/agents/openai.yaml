@@ -1,6 +1,6 @@
 interface:
   display_name: "Web Workers"
-  short_description: "Delegate focused reading to Web workers; Codex verifies"
-  default_prompt: "Use $web-workers to investigate independent parts of this task, then verify the important claims locally."
+  short_description: "Auto-route routine work: Web, Luna max, then Parent"
+  default_prompt: "Use $web-workers to identify routine subtasks, delegate to the highest available Web mode with native Luna max fallback, and verify results locally."
 policy:
   allow_implicit_invocation: true

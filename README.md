@@ -1,10 +1,12 @@
 # Hybrid Codex
 
+**简体中文** | [English](README.en.md)
+
 **原生 Codex 负责思考、实现与验收；ChatGPT Web 负责有边界的只读并行调查。**
 
-Native Codex is the parent. ChatGPT Web provides subordinate, read-only workers
-through MCP. This repository packages a reusable user skill, a pinned specialist
-backend, and compatibility patches for an existing launcher. No LazyCodex required.
+原生 Codex 是主模型，ChatGPT Web 通过 MCP 提供只读 Worker。
+本仓库提供可复用的用户级 skill、固定版本的 specialist 后端，以及适配已有 launcher
+的兼容补丁，无需 LazyCodex。
 
 ```text
 Native Codex Parent → native Codex backend
@@ -94,7 +96,12 @@ TASK / GOAL / SCOPE / RELEVANT CODE
 CONSTRAINTS / QUESTIONS / OUTPUT FORMAT
 ```
 
-普通阅读显式用 `instant`，较复杂分析用 `medium`；不会在失败后静默切换模式。
+主模型在日常任务中自主识别边界清楚、易验收的阅读、分析和草稿杂活，无需每次点名 skill。
+默认顺序：网页最高可用档位 → 原生 `gpt-5.6-luna` / `max` → 主模型兜底。
+网页先查 status，按 `pro → extra-high → high → medium → instant` 选择首个可用档位；
+这里的“最高”指思考档位，不代表剩余使用额度。网页 `luna` 不等于原生 Luna max。
+失败时简短说明降级原因；只对已诊断的临时或输入问题重试一次，避免反复空转。
+这是 skill 的分派策略，依赖宿主加载 skill 和提供对应工具，不是后台强制路由器。
 2–5 个独立调查优先 batch，简单 grep/文件搜索仍本地完成。
 重要结论遵循：Worker claim → Parent 查看代码或运行结果 → 验证 → 用于决策。
 
@@ -120,6 +127,9 @@ bun scripts/smoke.ts batch
 工具、真实单 Worker 和三 Worker 均通过；一次三任务生成窗口共同重叠 11.923 秒。
 这是一次实测结果，不是性能保证。私有配置、登录、会话ID、完整日志没有随仓库发布。
 
+自动“网页 → Luna max → 主模型”降级策略已通过 skill 校验与安装测试，完整的真实
+降级链路尚未实测。
+
 ## 源码与维护
 
 - `.agents/skills/web-workers/`：可发布、可安装的 skill 源码。
@@ -133,7 +143,7 @@ bun scripts/smoke.ts batch
 本项目安装器遇到不同 revision 会拒绝套用补丁。当前上游全仓库 typecheck 有已知
 错误，不宣称全部测试通过；参见[兼容性说明](docs/compatibility.md)。
 
-## License / 致谢
+## 许可证与致谢
 
 MIT。此项目基于 [Rakeem-C/cursor-chatgpt-web](https://github.com/Rakeem-C/cursor-chatgpt-web)
 的 specialist MCP 和 [miuuyy/codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web)

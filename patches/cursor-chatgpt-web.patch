@@ -104,7 +104,7 @@ index a4e0de3..886e464 100644
    const server = new McpServer(
      { name: "cursor-chatgpt-web", version: VERSION },
 -    { instructions: CURSOR_GPT_WEB_MCP_INSTRUCTIONS },
-+    { instructions: "Codex Parent owns requirements, architecture, decisions, repository writes, tests and final verification. ChatGPT Web is a subordinate READ / ANALYZE / REPORT worker. Delegate bounded code, dependency, documentation, log and test investigations using focused context. Prefer batch for 2–5 independent tasks; never exceed five active workers. Use explicit mode instant or medium for routine analysis. Never execute worker tool calls automatically. Recheck important claims locally. Do not change Parent base URL or start another browser daemon." },
++    { instructions: "Codex Parent owns requirements, architecture, decisions, repository writes, tests and final verification. ChatGPT Web is a subordinate READ / ANALYZE / REPORT worker. Delegate bounded code, dependency, documentation, log and test investigations using focused context. Prefer batch for 2–5 independent tasks; never exceed five active workers. Select the highest available Web mode from status; on failure use native Luna max, then Parent. Never execute worker tool calls automatically. Recheck important claims locally. Do not change Parent base URL or start another browser daemon." },
    );
    attachEmptyMcpCatalogs(server);
    const runtime = () => getCursorSpecialistRuntime();
@@ -119,11 +119,11 @@ index a4e0de3..886e464 100644
 -        "Use for ambiguous architecture, hard root cause, independent review, or a second opinion.",
 -        "Do not use for trivial edits, formatting, simple search, or one-line fixes.",
 +        "Use for bounded repository, dependency, documentation, log and test analysis; Codex retains final authority.",
-+        "Use explicit instant or medium mode for routine reading; send only focused context.",
++        "Use the highest available Web mode from status; send only focused context; native Luna max is the fallback.",
          "Cursor must keep Read, Search, Shell, ApplyPatch, git, and tests. Omit threadId for a fresh Temporary Chat; pass threadId only to resume an explicit specialist thread.",
          "Set metadata.role for a named lease; threadId defaults to role:<role>. A second live job with the same role fails with lease_blocked.",
 -        "If the result has awaitingTools=true, run the toolCalls locally and call again with the same jobId and toolResults. That continues the same Temporary Chat.",
-+        "No local tools are permitted. If awaitingTools is returned, cancel that job and let Codex investigate locally.",
++        "No local tools are permitted. If awaitingTools is returned, cancel that job and follow the skill fallback policy.",
          "A sixth concurrent turn queues unless queue=false, which keeps chatgpt_web_tab_limit.",
        ].join(" "),
        inputSchema: {

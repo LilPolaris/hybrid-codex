@@ -1,6 +1,6 @@
 ---
 name: web-workers
-description: Delegate bounded read-only repository, dependency, documentation, log and test investigations to up to five ChatGPT Web workers, with Codex retaining planning, implementation and final verification.
+description: Automatically offload bounded routine reading, analysis and drafting to the highest available ChatGPT Web mode, then native Luna max on failure, with Codex retaining implementation and verification.
 ---
 
 # Role
@@ -8,7 +8,20 @@ description: Delegate bounded read-only repository, dependency, documentation, l
 Codex Parent is the brain. ChatGPT Web agents are subordinate workers.
 Workers have READ / ANALYZE / REPORT permissions on supplied context only.
 
-## Delegate
+## Automatic triage and delegation
+
+During ordinary work, Parent decides whether a subtask is routine without waiting for
+the user to name this skill or approve each delegation. Delegate when the goal is clear,
+the relevant input is bounded, the result is independently checkable, and preparing
+and checking it costs less than doing the analysis. Examples include comparing supplied
+files, summarizing logs, checking repetitive patterns, and drafting test cases or text.
+Workers return drafts or suggested diffs as text; Parent applies any approved changes.
+Do a one-command lookup or trivial edit locally. Keep ambiguous requirements, design
+choices and high-impact judgment with Parent; split out routine supporting work.
+
+Use this fallback order for eligible subtasks: highest available Web mode → native
+gpt-5.6-luna with max reasoning → Parent. This is a model-directed skill policy,
+not a background scheduler or a guarantee that every turn loads this skill.
 
 Use workers for bounded repository exploration, specified-file summaries, call tracing,
 module responsibilities, dependency inspection, documentation summarization, log and
@@ -42,22 +55,53 @@ response → state; and auth test coverage/missing edge cases.
 
 ## Calls
 
-Call chatgpt_web_status first. Use explicit mode: "instant" for routine summaries,
-"medium" for analysis, and "high" only when the bounded task warrants it. Never silently
-switch modes after failure. For independent tasks omit threadId and metadata.role
+Call chatgpt_web_status first. Interpret highest as the highest supported reasoning
+mode, not maximum parallelism or a claim about remaining account quota. Select the
+first mode marked available in capabilities.modes in this order:
+pro → extra-high → high → medium → instant. Do not infer availability from the schema
+or upgrade the account. Honor an explicit user mode override. No available mode or
+an unavailable status/turn tool goes directly to the native Luna fallback.
+For independent tasks omit threadId and metadata.role
 (role creates retained history upstream). Use task id for labels.
 
-Single: chatgpt_web_turn({mode:"instant", prompt:"<envelope>", queue:false}).
-Batch: chatgpt_web_batch({mode:"instant",tasks:[{id:"middleware",prompt:"<envelope A>"},
+Single: chatgpt_web_turn({mode:selectedMode, prompt:"<envelope>", queue:false}).
+Batch: chatgpt_web_batch({mode:selectedMode,tasks:[{id:"middleware",prompt:"<envelope A>"},
 {id:"frontend",prompt:"<envelope B>"},{id:"tests",prompt:"<envelope C>"}]}).
 
 Never supply tools or toolResults. Never execute worker-requested tool calls automatically.
 If awaitingTools is returned, treat it as unsupported for this read-only workflow, cancel
-that job with chatgpt_web_cancel({jobId:"..."}), and let Parent investigate locally.
+that job with chatgpt_web_cancel({jobId:"..."}), and use the fallback below.
 Cancel only jobs owned by this task; do not use all:true against unrelated work.
 Report actual errors, diagnose before retrying, and distinguish tool discovery from live success.
-If tools are unavailable after configuration, restart Codex and reopen this project;
-do not route the Parent model to Web or substitute a native agent and label it Web.
+Do not stop the task to request a restart when a fallback is available. If tool discovery
+is exhausted, explain that future sessions may need a restart to load configured tools.
+
+## Bounded fallback
+
+Accept Web output only if it addresses the task with checkable evidence. Authentication
+errors, quota exhaustion, unsupported modes, failed jobs, empty output or materially
+unusable results trigger Luna. A full worker pool is congestion: work locally while
+waiting, or use Luna if the task cannot usefully wait. An outstanding asynchronous job
+is not a failed job; inspect or resume it using the tool's supported job protocol.
+For a diagnosed transient or input-format problem allow at most one corrected Web retry.
+Do not cycle through lower Web modes after a failed generation.
+Before switching, inspect status and cancel only owned unfinished jobs (including batch
+siblings that are being replaced); preserve completed results. If cancellation cannot
+be confirmed, report the job as unresolved and do not launch duplicate work for it.
+
+Briefly report the route and actual fallback reason; no repeated user confirmation is
+needed. If native subagents are available, request model="gpt-5.6-luna" and
+reasoning_effort="max" explicitly, with fork_turns="none" and the focused envelope.
+Use the current task's subagent tool, not a new user-visible task. Never substitute
+chatgpt_web_turn(mode="luna"): that route does not provide native Luna max.
+Native Luna receives the same READ / ANALYZE / REPORT scope, no repository writes,
+shell execution or external actions. Its prompt constraints are not an OS sandbox.
+When a bounded subtask can run independently, Parent continues useful separate work;
+otherwise follow the host's delegation constraints and do it locally.
+If the host cannot select this exact model/effort, delegation is unavailable, or Luna
+fails or returns unusable evidence, Parent completes the work. Do not loop between
+providers or silently substitute a different model/effort. Record actual route metadata
+when available and distinguish requested settings from verified execution.
 
 ## Verification
 
