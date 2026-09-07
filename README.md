@@ -2,6 +2,43 @@
 
 **简体中文** | [English](README.en.md)
 
+## 当前版本：官方 MCP 任务队列
+
+Codex 自动排队、查看进度和验收；你在 ChatGPT 启动一批任务，网页通过官方 MCP
+领取任务、读写本地文件、运行命令并提交结果。结果直接写入队列，不抓取网页回答。
+
+```text
+Codex → 本地队列 ← ChatGPT Developer mode
+           ↓              ↓
+       状态与估算      本地读写 / 命令执行
+           ↑              ↓
+        Codex 验收 ← MCP 提交结果
+```
+
+- 完全访问模式：以启动服务的本机用户权限执行；不是目录沙箱。
+- 持久化队列、执行去重、文件版本检查、取消和故障冷却。
+- 对话中逐次显示估算 token 净收益；未知保持未知，不等同于账单。
+- 网页失败并确认停止后，由原生 Luna max、主模型依次兜底。
+- 网页由用户启动，后台监测读取本地队列；不承诺自动唤醒网页或无限运行。
+
+已有仓库依赖时：
+
+```sh
+python scripts/setup.py queue
+python scripts/setup.py skill
+python scripts/connect_queue.py --tunnel-id YOUR_SEPARATE_TUNNEL_ID
+```
+
+最后在 ChatGPT Developer mode 连接 **Hybrid Task Queue**。详细安装、使用和验收
+见[任务队列指南](docs/task-queue.md)。2026-09-07 已完成本地测试与真实 ChatGPT
+验收：经官方 tunnel 写入本地文件、运行命令、提交结果，并由 Codex 复核通过。
+其他账号仍需独立完成连接验收。
+
+## 历史浏览器集成（不用于新任务）
+
+以下保留旧版架构和安装记录以便维护。新任务使用上面的官方 MCP 队列，勿按旧版
+浏览器自动化流程扩权或启动新的委派。
+
 **原生 Codex 负责思考、实现与验收；ChatGPT Web 负责有边界的只读并行调查。**
 
 原生 Codex 是主模型，ChatGPT Web 通过 MCP 提供只读 Worker。
@@ -98,11 +135,13 @@ CONSTRAINTS / QUESTIONS / OUTPUT FORMAT
 
 主模型在日常任务中自主识别边界清楚、易验收的阅读、分析和草稿杂活，无需每次点名 skill。
 默认顺序：网页最高可用档位 → 原生 `gpt-5.6-luna` / `max` → 主模型兜底。
+优先利用网页额度承接可委派的思考，包括任务拆分建议、收益预判和初步质量检查；
+不要求估算净节省为正才委派。主模型负责必要的本地操作、关键决策和最终核验。
 网页先查 status，按 `pro → extra-high → high → medium → instant` 选择首个可用档位；
 这里的“最高”指思考档位，不代表剩余使用额度。网页 `luna` 不等于原生 Luna max。
 失败时简短说明降级原因；只对已诊断的临时或输入问题重试一次，避免反复空转。
 这是 skill 的分派策略，依赖宿主加载 skill 和提供对应工具，不是后台强制路由器。
-2–5 个独立调查优先 batch，简单 grep/文件搜索仍本地完成。
+2–5 个独立调查优先 batch，grep/文件搜索等工具操作仍本地完成，结果分析尽量交给网页。
 重要结论遵循：Worker claim → Parent 查看代码或运行结果 → 验证 → 用于决策。
 
 ### 每次委派的数字与故障冷却

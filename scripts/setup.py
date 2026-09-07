@@ -45,7 +45,8 @@ def install_skill(home: Path) -> Path:
     source = ROOT / '.agents' / 'skills' / 'web-workers'
     target = home / 'skills' / 'web-workers'
     files = [source / 'SKILL.md', source / 'agents' / 'openai.yaml',
-             source / 'scripts' / 'worker_meter.py', source / 'references' / 'meter.md']
+             source / 'scripts' / 'worker_meter.py', source / 'references' / 'meter.md',
+             source / 'references' / 'queue.md', source / 'references' / 'legacy-browser.md']
     if all((target / p.relative_to(source)).is_file() and
            (target / p.relative_to(source)).read_bytes() == p.read_bytes() for p in files):
         return target
@@ -72,6 +73,23 @@ def find_bun(explicit: str | None = None) -> str:
         if item and Path(item).is_file():
             return str(Path(item).resolve())
     raise RuntimeError('Bun not found. Put Bun on PATH or supply --bun /absolute/path/to/bun.')
+
+
+def install_queue(home: Path, bun: str) -> Path:
+    sdk = ROOT / 'vendor/cursor-chatgpt-web/node_modules/@modelcontextprotocol/sdk'
+    if not sdk.is_dir():
+        raise RuntimeError('Install the pinned vendor dependencies first; queue uses the existing MCP SDK.')
+    data = home / 'worker-metrics/queue'
+    data.mkdir(parents=True, exist_ok=True)
+    manifest = home / 'worker-metrics/queue-bridge.json'
+    config = {'command': bun, 'script': str(ROOT / 'scripts/queue-bridge.ts'),
+              'data': str(data), 'access': 'full'}
+    config['mcp_args'] = [config['script'], 'mcp', '--data', str(data), '--access', 'full']
+    text = json.dumps(config, ensure_ascii=False, indent=2) + '\n'
+    if manifest.exists() and manifest.read_text(encoding='utf-8') != text:
+        backup(manifest, home)
+    manifest.write_text(text, encoding='utf-8')
+    return manifest
 
 
 def prepare_backend(bun: str) -> None:
@@ -168,12 +186,14 @@ def install_backend(home: Path, bun: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['skill', 'backend', 'doctor'])
+    parser.add_argument('action', choices=['skill', 'backend', 'doctor', 'queue'])
     parser.add_argument('--bun', help='Absolute path to an existing Bun executable')
     args = parser.parse_args()
     home = codex_home()
     if args.action == 'skill':
         print(f'User skill installed: {install_skill(home)}')
+    elif args.action == 'queue':
+        print(f'Queue manifest installed: {install_queue(home, find_bun(args.bun))}')
     elif args.action == 'backend':
         install_backend(home, find_bun(args.bun))
     else:

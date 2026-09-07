@@ -1,6 +1,6 @@
 interface:
   display_name: "Web Workers"
-  short_description: "Auto-route routine work: Web, Luna max, then Parent"
-  default_prompt: "Use $web-workers to identify routine subtasks, delegate to the highest available Web mode with native Luna max fallback, and verify results locally."
+  short_description: "MCP task queue, local tools and inline token estimates"
+  default_prompt: "Use $web-workers to queue work for the official ChatGPT MCP connector, inspect submitted changes and show estimated token savings, with native Luna max fallback."
 policy:
   allow_implicit_invocation: true

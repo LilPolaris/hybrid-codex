@@ -2,6 +2,46 @@
 
 [简体中文](README.md) | **English**
 
+## Current: official MCP task queue
+
+Codex queues tasks and reviews results. You start a batch in ChatGPT Developer mode;
+the connected app claims tasks, reads/writes local files, runs commands and submits
+results through MCP. No browser answer scraping is used.
+
+```text
+Codex → local queue ← ChatGPT Developer mode
+           ↓                 ↓
+     status + estimates   local tools
+           ↑                 ↓
+      Parent review ← MCP result submission
+```
+
+- Full mode uses the local OS user's permissions; it is not a directory sandbox.
+- Persistent queue, operation deduplication, file version checks, cancellation and cooldowns.
+- Inline estimated net Parent token savings; unknown remains unknown, not billing usage.
+- Native Luna max then Parent fallback after confirmed worker termination.
+- The user starts ChatGPT batches; background monitoring reads the local queue. No promise
+  of automatic ChatGPT wakeup or indefinite execution.
+
+With repository dependencies already installed:
+
+```sh
+python scripts/setup.py queue
+python scripts/setup.py skill
+python scripts/connect_queue.py --tunnel-id YOUR_SEPARATE_TUNNEL_ID
+```
+
+Then connect **Hybrid Task Queue** in ChatGPT Developer mode. See the
+[task queue guide](docs/task-queue.md) for setup, operation and verification. On
+2026-09-07, local tests and live ChatGPT acceptance passed: the official tunnel carried
+file writes, command execution and result submission, independently checked by Codex.
+Other accounts still need their own connection acceptance.
+
+## Historical browser integration (not for new tasks)
+
+The material below preserves the previous architecture and installation records for
+maintenance. Use the official MCP queue above for new work, not the old browser workflow.
+
 **Native Codex handles planning, implementation and acceptance. ChatGPT Web handles bounded, read-only investigations in parallel.**
 
 Native Codex is the parent. ChatGPT Web provides subordinate, read-only workers
@@ -108,6 +148,11 @@ every time. The default order is:
 
 **Highest available Web mode → native `gpt-5.6-luna` / `max` → Parent.**
 
+Prefer using the ample Web allowance for eligible reasoning, including decomposition
+proposals, benefit estimates and preliminary quality review. Positive estimated net
+savings is not a dispatch requirement. Parent retains necessary local actions, key
+decisions and final verification.
+
 Web status is checked first. The first available mode in
 `pro → extra-high → high → medium → instant` is selected. “Highest” means reasoning
 mode, not remaining usage quota. Web `luna` is not native Luna max.
@@ -116,8 +161,9 @@ gets one corrected retry, preventing repeated failed attempts.
 
 This is a skill-based delegation policy. It depends on the host loading the skill
 and exposing the required tools; it is not a background routing service.
-Prefer batch for 2–5 independent investigations. Simple grep and file lookups stay
-local. Important claims follow: worker claim → Parent inspects code or runtime
+Prefer batch for 2–5 independent investigations. Grep and file lookup tool actions stay
+local; delegate analysis of their results to Web where feasible. Important claims follow:
+worker claim → Parent inspects code or runtime
 results → verification → decision.
 
 ### Per-delegation numbers and failure cooldowns

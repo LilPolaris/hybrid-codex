@@ -1,8 +1,11 @@
 # Hybrid Codex
 
-Codex owns requirements, architecture, writes, tests and acceptance. Automatically assess
-bounded routine subtasks using `.agents/skills/web-workers/SKILL.md`: highest available
-Web mode first, native gpt-5.6-luna with max reasoning second, Parent last. Trivial local
-lookups stay local. Web and Luna workers only analyze focused
-context and report evidence. At most five run concurrently. Parent rechecks important claims.
-Never enable local tools for Web workers, change the Parent base URL, or start another browser daemon.
+Codex owns requirements, key decisions and final acceptance. Use
+`.agents/skills/web-workers/SKILL.md` and its official MCP queue for new delegation.
+The user authorized full local file and command access through that separate connector.
+ChatGPT starts from a user message, claims queued work and returns results through MCP;
+Parent monitors the local queue and verifies changes. Prioritize eligible Web work,
+including implementation and preliminary review; positive estimated savings is not a gate.
+Use native Luna max then Parent after confirmed worker termination when fallback is needed.
+Do not modify the existing read-only browser tool into an execution route, scrape answers,
+automate ChatGPT prompts/approvals, change Parent base URL, or start a second browser daemon.
